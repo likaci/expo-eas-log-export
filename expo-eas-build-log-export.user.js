@@ -2,17 +2,18 @@
 // @name        Expo EAS Build Log Export
 // @namespace   Violentmonkey Scripts
 // @match       https://expo.dev/accounts/*/projects/*/builds/*
-// @grant       none
-// @version     0.2
+// @grant       GM_xmlhttpRequest
+// @version     0.4
 // @author      likaci
-// @description Export Expo EAS build logs and artifacts
+// @description Export Expo EAS build logs and rename app files by version
+// @license     MIT
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  const originalFetch = window.fetch;
-  window.fetch = function (url, options) {
+  const originalFetch = unsafeWindow.fetch;
+  unsafeWindow.fetch = function (url, options) {
     return originalFetch(url, options)
       .then(response => {
         if (url === 'https://api.expo.dev/graphql') {
@@ -32,9 +33,10 @@
   };
 
   function handleBuildData(buildData) {
-    const {logFiles, artifacts, appVersion, appBuildVersion, buildProfile, platform} = buildData;
+    const {app, logFiles, artifacts, appVersion, appBuildVersion, buildProfile, platform} = buildData;
+    const { slug } = app;
     const {applicationArchiveUrl, xcodeBuildLogsUrl} = artifacts;
-    const filePrefix = `${appVersion}-${appBuildVersion}-${buildProfile}`;
+    const filePrefix = `${appVersion}-${appBuildVersion}_${buildProfile}`;
 
     const installButton = Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === 'Install');
     if (!installButton) {
@@ -55,7 +57,7 @@
       if (applicationArchiveUrl) {
         createDownloadButton(targetDiv, 'App', () => {
           const extension = applicationArchiveUrl.split('.').pop();
-          downloadFile(applicationArchiveUrl, `${filePrefix}.${extension}`);
+          downloadFile(applicationArchiveUrl, `${slug}_${filePrefix}.${extension}`);
         });
       }
     }
@@ -104,9 +106,21 @@
   }
 
   async function downloadFile(url, filename) {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    downloadBlob(blob, filename);
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: "GET",
+        url: url,
+        responseType: "blob",
+        onload: function(response) {
+          resolve(response.response);
+        },
+        onerror: function(error) {
+          reject(error);
+        }
+      });
+    }).then(blob => {
+      downloadBlob(blob, filename);
+    });
   }
 
   function downloadBlob(blob, filename) {
